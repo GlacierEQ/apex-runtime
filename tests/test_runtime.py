@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tests for Apex Runtime — State, CI, Connectors, Search, Monitoring
+Tests for Apex Runtime — All 8 Engines
 """
 
 import json
@@ -18,6 +18,9 @@ from connector_runtime import (
 )
 from search_engine import SearchEngine, SearchResult, IndexEntry
 from monitoring import HealthMonitor, HealthCheck, HealthReport, HealthStatus
+from error_recovery import RecoveryManager, Checkpoint, RecoveryAction
+from doc_site import DocSite, DocPage, DocSection
+from skill_registry import SkillRegistry, SkillInfo
 
 
 # ─── State Store Tests ───────────────────────────────────────────────────────
@@ -289,6 +292,165 @@ class TestIntegration:
         results = engine.search("server")
         assert len(results) > 0
         assert any(c.name == "exists" for c in checks)
+
+
+# ─── Error Recovery Tests ────────────────────────────────────────────────────
+
+class TestRecoveryManager:
+    def test_checkpoint(self, tmp_path):
+        recovery = RecoveryManager(str(tmp_path / "recovery"))
+        cp = recovery.checkpoint("test_checkpoint")
+        assert cp.id.startswith("cp_")
+        assert cp.name == "test_checkpoint"
+
+    def test_list_checkpoints(self, tmp_path):
+        recovery = RecoveryManager(str(tmp_path / "recovery"))
+        recovery.checkpoint("cp1")
+        recovery.checkpoint("cp2")
+        cps = recovery.list_checkpoints()
+        assert len(cps) == 2
+
+    def test_create_backup(self, tmp_path):
+        recovery = RecoveryManager(str(tmp_path / "recovery"))
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("content")
+
+        backup = recovery.create_backup(str(test_file))
+        assert backup is not None
+        assert Path(backup).exists()
+
+    def test_rollback(self, tmp_path):
+        recovery = RecoveryManager(str(tmp_path / "recovery"))
+        cp = recovery.checkpoint("before_change")
+        result = recovery.rollback(cp.id)
+        assert result is True
+
+    def test_history(self, tmp_path):
+        recovery = RecoveryManager(str(tmp_path / "recovery"))
+        recovery.checkpoint("test")
+        history = recovery.get_history()
+        assert len(history) >= 1
+
+    def test_safe_execute(self, tmp_path):
+        recovery = RecoveryManager(str(tmp_path / "recovery"))
+
+        def good_func():
+            return "success"
+
+        result = recovery.safe_execute(good_func, "test_good")
+        assert result == "success"
+
+    def test_safe_execute_rollback(self, tmp_path):
+        recovery = RecoveryManager(str(tmp_path / "recovery"))
+
+        def bad_func():
+            raise ValueError("fail")
+
+        with pytest.raises(ValueError):
+            recovery.safe_execute(bad_func, "test_bad")
+        history = recovery.get_history()
+        assert any(a.action == "safe_execute_failed" for a in history)
+
+
+# ─── Documentation Site Tests ────────────────────────────────────────────────
+
+class TestDocSite:
+    def test_add_repo(self, tmp_path):
+        site = DocSite(str(tmp_path / "docs"))
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "README.md").write_text("# My Repo\n\nDescription here.")
+
+        count = site.add_repo(str(repo))
+        assert count == 1
+
+    def test_generate(self, tmp_path):
+        site = DocSite(str(tmp_path / "docs"))
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        (repo / "README.md").write_text("# Test\n\nContent.")
+
+        site.add_repo(str(repo))
+        result = site.generate()
+        assert result["total_pages"] == 1
+        assert (tmp_path / "docs" / "index.html").exists()
+        assert (tmp_path / "docs" / "INDEX.md").exists()
+
+    def test_search(self, tmp_path):
+        site = DocSite(str(tmp_path / "docs"))
+        (tmp_path / "README.md").write_text("# MCP Server\n\nBuild MCP tools.")
+        site.add_repo(str(tmp_path))
+
+        results = site.search("MCP")
+        assert len(results) > 0
+
+    def test_categories(self, tmp_path):
+        site = DocSite(str(tmp_path / "docs"))
+        repo = tmp_path / "pipeline-repo"
+        repo.mkdir()
+        (repo / "README.md").write_text("# Pipeline Forge\n\nBuild pipelines.")
+        site.add_repo(str(repo))
+        site.generate()
+
+        categories = list(site.sections.keys())
+        assert "pipelines" in categories
+
+
+# ─── Skill Registry Tests ────────────────────────────────────────────────────
+
+class TestSkillRegistry:
+    def test_register(self, tmp_path):
+        registry = SkillRegistry(str(tmp_path / "skills"))
+        skill_file = tmp_path / "test_skill.md"
+        skill_file.write_text("# Test Skill\n\nDescription of skill.\n\ntags: python, testing\ntrigger: when testing")
+
+        skill = registry.register(str(skill_file))
+        assert skill.name == "test_skill"
+        assert "python" in skill.tags
+
+    def test_list_all(self, tmp_path):
+        registry = SkillRegistry(str(tmp_path / "skills"))
+        (tmp_path / "a.md").write_text("# Skill A\n\nDesc A.")
+        (tmp_path / "b.md").write_text("# Skill B\n\nDesc B.")
+        registry.register(str(tmp_path / "a.md"))
+        registry.register(str(tmp_path / "b.md"))
+
+        skills = registry.list_all()
+        assert len(skills) == 2
+
+    def test_search(self, tmp_path):
+        registry = SkillRegistry(str(tmp_path / "skills"))
+        (tmp_path / "mcp_skill.md").write_text("# MCP Connector\n\nConnect to MCP servers.")
+        registry.register(str(tmp_path / "mcp_skill.md"))
+
+        results = registry.search("MCP")
+        assert len(results) > 0
+
+    def test_unregister(self, tmp_path):
+        registry = SkillRegistry(str(tmp_path / "skills"))
+        (tmp_path / "skill.md").write_text("# Skill\n\nDesc.")
+        registry.register(str(tmp_path / "skill.md"))
+
+        assert registry.unregister("skill") is True
+        assert registry.get("skill") is None
+
+    def test_stats(self, tmp_path):
+        registry = SkillRegistry(str(tmp_path / "skills"))
+        (tmp_path / "skill.md").write_text("# Skill\n\nDesc.")
+        registry.register(str(tmp_path / "skill.md"))
+
+        stats = registry.get_stats()
+        assert stats["total_skills"] == 1
+
+    def test_categories(self, tmp_path):
+        registry = SkillRegistry(str(tmp_path / "skills"))
+        (tmp_path / "pipeline.md").write_text("# Pipeline Skill\n\nBuild pipelines.")
+        (tmp_path / "test.md").write_text("# Test Skill\n\nRun tests.")
+        registry.register(str(tmp_path / "pipeline.md"))
+        registry.register(str(tmp_path / "test.md"))
+
+        categories = registry.get_categories()
+        assert "pipelines" in categories
 
 
 if __name__ == "__main__":

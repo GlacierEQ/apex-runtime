@@ -1,6 +1,6 @@
 # Apex Runtime
 
-State persistence, CI/CD, connectors, search, and monitoring for the APEX system.
+State persistence, CI/CD, connectors, search, monitoring, recovery, docs, and skill registry for the APEX system.
 
 ## Engines
 
@@ -47,6 +47,35 @@ Health checks and alerts.
 python3 runtime.py monitor check --repos /path/to/repo1,/path/to/repo2
 python3 runtime.py monitor history
 python3 runtime.py monitor latest
+```
+
+### 6. Error Recovery
+Rollback and recovery mechanisms.
+
+```bash
+python3 runtime.py recovery checkpoint "before_deploy"
+python3 runtime.py recovery checkpoints
+python3 runtime.py recovery rollback <checkpoint_id>
+python3 runtime.py recovery history
+```
+
+### 7. Documentation Site
+Central docs hub.
+
+```bash
+python3 runtime.py docs add --repo /path/to/repo
+python3 runtime.py docs generate
+python3 runtime.py docs search "MCP"
+```
+
+### 8. Skill Registry
+Index of all available skills.
+
+```bash
+python3 runtime.py skills register /path/to/skill.md
+python3 runtime.py skills list
+python3 runtime.py skills search "MCP"
+python3 runtime.py skills stats
 ```
 
 ## Testing

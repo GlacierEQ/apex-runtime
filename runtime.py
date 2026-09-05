@@ -155,6 +155,86 @@ def cmd_monitor(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_recovery(args: argparse.Namespace) -> int:
+    """Recovery commands."""
+    recovery = RecoveryManager(str(BASE_DIR / "recovery"))
+
+    if args.recovery_action == "checkpoints":
+        cps = recovery.list_checkpoints()
+        print("\nCheckpoints:")
+        for cp in cps:
+            print(f"  {cp.id}: {cp.name}")
+        print(f"\nTotal: {len(cps)}")
+    elif args.recovery_action == "checkpoint":
+        cp = recovery.checkpoint(args.name)
+        print(f"Created checkpoint: {cp.id} ({cp.name})")
+    elif args.recovery_action == "rollback":
+        if recovery.rollback(args.id):
+            print(f"Rolled back to: {args.id}")
+        else:
+            print(f"Failed to rollback to: {args.id}")
+    elif args.recovery_action == "history":
+        history = recovery.get_history()
+        print("\nRecovery History:")
+        for action in history:
+            status = "✓" if action.success else "✗"
+            print(f"  {status} [{action.action}] {action.details}")
+
+    return 0
+
+
+def cmd_docs(args: argparse.Namespace) -> int:
+    """Documentation commands."""
+    site = DocSite(str(BASE_DIR / "docs"))
+
+    if args.docs_action == "add":
+        count = site.add_repo(args.repo)
+        print(f"Added {count} pages from {args.repo}")
+    elif args.docs_action == "generate":
+        result = site.generate()
+        print(f"Generated documentation site:")
+        print(f"  Pages: {result['total_pages']}")
+        print(f"  Sections: {len(result['sections'])}")
+    elif args.docs_action == "search":
+        results = site.search(args.query)
+        print(f"\nResults for '{args.query}':")
+        for page in results:
+            print(f"  {page.title} ({page.category})")
+        print(f"\nTotal: {len(results)}")
+
+    return 0
+
+
+def cmd_skills(args: argparse.Namespace) -> int:
+    """Skill registry commands."""
+    registry = SkillRegistry(str(BASE_DIR / "skills"))
+
+    if args.skills_action == "register":
+        skill = registry.register(args.path)
+        print(f"Registered: {skill.name}")
+        print(f"  Category: {skill.category}")
+        print(f"  Tags: {', '.join(skill.tags)}")
+    elif args.skills_action == "list":
+        skills = registry.list_all()
+        print("\nRegistered Skills:")
+        for skill in skills:
+            print(f"  {skill.name} ({skill.category})")
+        print(f"\nTotal: {len(skills)}")
+    elif args.skills_action == "search":
+        results = registry.search(args.query)
+        print(f"\nResults for '{args.query}':")
+        for skill in results:
+            print(f"  {skill.name}: {skill.description[:50]}")
+        print(f"\nTotal: {len(results)}")
+    elif args.skills_action == "stats":
+        stats = registry.get_stats()
+        print(f"\nRegistry Stats:")
+        print(f"  Total skills: {stats['total_skills']}")
+        print(f"  Categories: {stats['categories']}")
+
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=f"Apex Runtime v{VERSION}",
@@ -211,6 +291,35 @@ def main() -> int:
     mon_hist.add_argument("--limit", type=int, default=10)
     mon_sub.add_parser("latest", help="Latest report")
 
+    # Recovery commands
+    recovery = sub.add_parser("recovery", help="Error recovery")
+    rec_sub = recovery.add_subparsers(dest="recovery_action")
+    rec_sub.add_parser("checkpoints", help="List checkpoints")
+    rec_cp = rec_sub.add_parser("checkpoint", help="Create checkpoint")
+    rec_cp.add_argument("name", help="Checkpoint name")
+    rec_rb = rec_sub.add_parser("rollback", help="Rollback to checkpoint")
+    rec_rb.add_argument("id", help="Checkpoint ID")
+    rec_sub.add_parser("history", help="Recovery history")
+
+    # Docs commands
+    docs = sub.add_parser("docs", help="Documentation site")
+    docs_sub = docs.add_subparsers(dest="docs_action")
+    docs_add = docs_sub.add_parser("add", help="Add repository docs")
+    docs_add.add_argument("--repo", required=True, help="Repository path")
+    docs_sub.add_parser("generate", help="Generate site")
+    docs_search = docs_sub.add_parser("search", help="Search docs")
+    docs_search.add_argument("query", help="Search query")
+
+    # Skills commands
+    skills = sub.add_parser("skills", help="Skill registry")
+    skills_sub = skills.add_subparsers(dest="skills_action")
+    skills_reg = skills_sub.add_parser("register", help="Register skill")
+    skills_reg.add_argument("path", help="Skill file or directory")
+    skills_sub.add_parser("list", help="List all skills")
+    skills_search = skills_sub.add_parser("search", help="Search skills")
+    skills_search.add_argument("query", help="Search query")
+    skills_sub.add_parser("stats", help="Registry stats")
+
     args = parser.parse_args()
 
     if not args.command:
@@ -223,6 +332,9 @@ def main() -> int:
         "connector": cmd_connector,
         "search": cmd_search,
         "monitor": cmd_monitor,
+        "recovery": cmd_recovery,
+        "docs": cmd_docs,
+        "skills": cmd_skills,
     }
 
     return commands[args.command](args)
