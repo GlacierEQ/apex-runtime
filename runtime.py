@@ -28,6 +28,9 @@ from ci_generator import CIGenerator
 from connector_runtime import ConnectorRuntime, GitHubConnector, FilesystemConnector
 from search_engine import SearchEngine
 from monitoring import HealthMonitor
+from error_recovery import RecoveryManager
+from doc_site import DocSite
+from skill_registry import SkillRegistry
 
 
 VERSION = "1.0.0"
